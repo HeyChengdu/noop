@@ -1940,9 +1940,8 @@ function Sidebar(props: {
   );
 }
 
-/** The sidebar footer: who and where, opening the user menu (settings, appearance, language). */
+/** The sidebar account, opening the user menu (settings, appearance, language). */
 function UserMenu(props: { hub: Hub; onSettings: () => void }) {
-  const who = () => L("Channel", "主会话");
   /** The signed-in account as the email's local part; the server address stays out of the UI. */
   const account = signal("");
   void Storage.getItem(KEYS.email).then((e) => account.set((e ?? "").split("@")[0]));
@@ -1984,12 +1983,7 @@ function UserMenu(props: { hub: Hub; onSettings: () => void }) {
           hoverStyle={hovered()}
           style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8, minHeight: 40, paddingHorizontal: 8, marginLeft: -8, borderRadius: radius.control }}
         >
-          <View style={{ flex: 1, gap: 1 }}>
-            <Text style={{ fontSize: 13, fontWeight: "600", color: colors.text, numberOfLines: 1 }}>{who()}</Text>
-            <If when={account()}>
-              <Text testID="user-account" style={{ fontSize: 12, color: colors.muted, numberOfLines: 1 }}>{account()}</Text>
-            </If>
-          </View>
+          <Text testID="user-account" style={{ flex: 1, fontSize: 13, fontWeight: "600", color: colors.text, numberOfLines: 1 }}>{account() || L("Account", "账户")}</Text>
           <Icon name="chevron-up" size={13} tint={colors.muted} />
         </View>
       }
