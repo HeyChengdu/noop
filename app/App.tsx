@@ -37,6 +37,7 @@ import type { InputRef, JSX, SpeechSession, ViewStyle } from "nsh";
 import { AlertDialog, Button, ContextMenu, Dialog, Menu, MenuItem, Input, NavPage, NavStack, NumberInput, Radio, RadioGroup, Scrollbar, TextView, createNavStack, type MarkdownExtension, type TextViewBlock, type TextViewCustomNode, type TextViewInline, type TextViewRef } from "nsh/base";
 import { isAvailable as hasWindow, titleBar, Window } from "nsh/desktop";
 import { checkForUpdate, downloadUpdate, installAndRestart } from "nsh/updater";
+import { createSettingsToast, SettingsToast } from "./settings-toast";
 import { avatarOf } from "./avatars";
 import { appendQuote } from "./quote";
 import { createTimelineWindow } from "./timeline";
@@ -2099,7 +2100,6 @@ function setBadge(count: number) {
 const DEVICES: Record<string, string> = { macos: "Mac", ios: "iPhone", android: "Android", windows: "Windows", linux: "Linux" };
 
 type PushInfo = { supported: boolean; ios: boolean; standalone: boolean; permission: string; subscribed: boolean; endpoint: string | null; device: string };
-type Note = { text: string; tone: "ok" | "bad" } | null;
 
 async function systemInfo(): Promise<PushInfo | null> {
   try {
@@ -2113,10 +2113,10 @@ async function systemInfo(): Promise<PushInfo | null> {
 }
 
 /** This device's push state and the steps that change it (the permission prompt needs the press that calls `enable`). */
-function createPush(hub: Hub) {
+function createPush(hub: Hub, success: (message: string) => void) {
   const info = signal<PushInfo | null>(null);
   const busy = signal(false);
-  const note = signal<Note>(null);
+  const note = signal<string | null>(null);
   const refresh = async () => info.set(systemNotifications() ? await systemInfo() : await hostCall<PushInfo>("pushState"));
   refresh();
 
@@ -2124,9 +2124,9 @@ function createPush(hub: Hub) {
     busy.set(true);
     note.set(null);
     try {
-      note.set({ text: await work(), tone: "ok" });
+      success(await work());
     } catch (e) {
-      note.set({ text: e instanceof Error ? e.message : String(e), tone: "bad" });
+      note.set(e instanceof Error ? e.message : String(e));
     } finally {
       busy.set(false);
       await refresh();
@@ -2232,7 +2232,7 @@ function NotifySettings(props: { push: Push; view: SettingsView | null; save: (p
           </If>
         </View>
         <If when={push.note()}>
-          <Text testID="push-note" style={{ fontSize: 14, lineHeight: 20, color: push.note()!.tone === "ok" ? colors.up : colors.danger }}>{push.note()!.text}</Text>
+          <Text testID="push-note" style={{ fontSize: 14, lineHeight: 20, color: colors.danger }}>{push.note()}</Text>
         </If>
       </View>
       <If when={props.view}>
@@ -2279,7 +2279,7 @@ function NotifySettings(props: { push: Push; view: SettingsView | null; save: (p
 function createSettings(hub: Hub) {
   const view = signal<SettingsView | null>(null);
   const error = signal("");
-  const saved = signal("");
+  const toast = createSettingsToast();
   const saving = signal(0);
   let writes = Promise.resolve();
   let revision = 0;
@@ -2308,8 +2308,6 @@ function createSettings(hub: Hub) {
     const current = pending.reduce((state, item) => merge(state, item.patch), confirmed.current);
     view.set(displayed({ ...confirmed, current }));
   }
-  let savedTimer: ReturnType<typeof setTimeout> | undefined;
-  cleanup(() => clearTimeout(savedTimer));
   const load = () => {
     error.set("");
     const started = revision;
@@ -2318,8 +2316,7 @@ function createSettings(hub: Hub) {
   async function save(patch: Record<string, unknown>) {
     revision++;
     error.set("");
-    saved.set("");
-    clearTimeout(savedTimer);
+    toast.dismiss();
     saving.update((n) => n + 1);
     const item = { patch };
     pending.push(item);
@@ -2335,8 +2332,7 @@ function createSettings(hub: Hub) {
       refresh();
       saving.update((n) => n - 1);
       if (!saving() && !error()) {
-        saved.set(L("Saved", "已保存"));
-        savedTimer = setTimeout(() => saved.set(""), 1600);
+        toast.show(L("Saved", "已保存"));
       }
     }
   }
@@ -2345,7 +2341,7 @@ function createSettings(hub: Hub) {
   const commandDraft = { name: signal(""), text: signal(""), editing: signal<string | undefined>(undefined), note: signal("") };
   /** The section the wide settings page shows (its sidebar picks it). */
   const tab = signal<SettingsTab>("notify");
-  return { view, error, saved, saving, load, save, commandDraft, tab };
+  return { view, error, toast, saving, load, save, commandDraft, tab };
 }
 type Settings = ReturnType<typeof createSettings>;
 
@@ -2365,7 +2361,7 @@ type SettingsTab = ReturnType<typeof SETTINGS_TABS>[number][0];
 
 /** The wide (desktop, tablet, wide browser) settings page. */
 function TeamSettings(props: { hub: Hub; push: Push; settings: Settings; wide: boolean; onRules: () => void; onConnection: () => void; onDisconnect: () => void }) {
-  const { view, error, saved, save } = props.settings;
+  const { view, error, save } = props.settings;
   props.settings.load();
   const eff = () => view()?.effective;
   const row = (): ViewStyle => ({ gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 0.5, borderTopColor: surfaceEdge() });
@@ -2395,8 +2391,8 @@ function TeamSettings(props: { hub: Hub; push: Push; settings: Settings; wide: b
       </View>
     <Scroll style={{ flex: 1 }}>
       <View style={{ width: "100%", maxWidth: size.column, alignSelf: "center", gap: 28, paddingHorizontal: props.wide ? 32 : 16, paddingTop: props.wide ? 28 : 18, paddingBottom: 48 }}>
-        <If when={error() || props.settings.saving() || saved()}>
-          <Text testID="settings-note" style={{ alignSelf: "flex-end", fontSize: 13.5, color: error() ? colors.danger : colors.up }}>{error() || (props.settings.saving() ? L("Saving…", "正在保存…") : saved())}</Text>
+        <If when={error()}>
+          <Text testID="settings-note" style={{ alignSelf: "flex-end", fontSize: 13.5, color: error() ? colors.danger : colors.up }}>{error()}</Text>
         </If>
         <If when={on("notify")}>
           <NotifySettings push={props.push} view={view()} save={save} wide={props.wide} />
@@ -3044,7 +3040,7 @@ function PhoneNotify(props: { push: Push; settings: Settings }) {
         </If>
       </Section>
       <If when={push.note()}>
-        <Text testID="push-note" style={{ marginTop: -20, paddingHorizontal: 32, fontSize: 13, color: push.note()!.tone === "ok" ? colors.up : colors.danger }}>{push.note()!.text}</Text>
+        <Text testID="push-note" style={{ marginTop: -20, paddingHorizontal: 32, fontSize: 13, color: colors.danger }}>{push.note()}</Text>
       </If>
       <If when={push.needsHomeScreen()}>
         <Section title={L("Turn on notifications on iPhone", "在 iPhone 上开启通知")}>
@@ -3354,7 +3350,8 @@ const CHANNEL: Route = { name: "channel" };
 
 function Chat(props: { hub: Hub; openRef?: string | null; onConnection: () => void; onDisconnect: () => void }) {
   const hub = props.hub;
-  const push = createPush(hub);
+  const settings = createSettings(hub);
+  const push = createPush(hub, settings.toast.show);
   const wide = () => windowSize().width >= WIDE;
   const drawer = signal(false);
   const drawerDragging = signal(false);
@@ -3390,7 +3387,6 @@ function Chat(props: { hub: Hub; openRef?: string | null; onConnection: () => vo
     sidebarOpen.set(open);
   };
   const help = signal(false);
-  const settings = createSettings(hub);
   // The pages: the channel at the bottom, what the sidebar, a link or settings opened above it.
   const nav = createNavStack<Route>([CHANNEL]);
   const top = () => { const r = nav.routes(); return r[r.length - 1]; };
@@ -4461,6 +4457,7 @@ function Chat(props: { hub: Hub; openRef?: string | null; onConnection: () => vo
       </If>
       </View>
 
+      <SettingsToast state={settings.toast} />
       <If when={toast()}>
         {(t) => (
           <View style={{ position: "absolute", top: size.bar + 10, left: 0, right: 0, alignItems: "center", paddingHorizontal: 12, pointerEvents: "box-none" }}>
