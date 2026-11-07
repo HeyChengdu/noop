@@ -1953,7 +1953,7 @@ function UserMenu(props: { hub: Hub; onSettings: () => void }) {
     <MenuItem testID={dark ? "theme-dark" : "theme-light"} accessibilityLabel={title}
       role="menuitemradio" checked={isDark() === dark} closeOnSelect={false}
       onSelect={() => { if (isDark() !== dark) toggleTheme(); }} hoverStyle={hovered()}
-      style={{ width: touch ? 44 : 32, height: touch ? 44 : 28, alignItems: "center", justifyContent: "center", borderRadius: 4,
+      style={{ width: touch ? 44 : 28, height: touch ? 44 : 28, alignItems: "center", justifyContent: "center", borderRadius: 4,
         backgroundColor: isDark() === dark ? colors.surface : "transparent", borderWidth: isDark() === dark ? 0.5 : 0, borderColor: surfaceEdge() }}>
       <Icon name={icon} size={16} tint={isDark() === dark ? colors.text : colors.muted} />
     </MenuItem>
