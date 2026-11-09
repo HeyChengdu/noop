@@ -16,7 +16,7 @@ your Noop deployment.
 ## Set up
 1. On the primary (or any trusted machine): `noop guest invite "shared-win-1"` prints a one-time join command valid
    for 10 minutes.
-2. On the shared machine, in the account that will run it: `noop guest join <url> <code>`, then `noop guest run`.
+2. On the shared machine, in the account that will run it: `noop guest join <url>` (paste the code when asked, so it never appears in `ps` or shell history), then `noop guest run`.
    The token lives in `NOOP_GUEST_HOME` (default `~/.noop-guest`). Each person/OS account on a shared machine uses its
    own home, so their guests never see each other's tasks or tokens.
 
@@ -32,3 +32,9 @@ your Noop deployment.
 Results are capped at 256 KB, tasks at 32 KB, 20 queued tasks per guest; a claimed task with no result returns to the
 queue after 6 hours. Anyone with access to the guest's home folder can act as that guest, which only lets them take
 the tasks assigned to it and send back results that are reviewed anyway.
+
+## Safety on the guest machine
+The cloned repository is untrusted. The agent runs without the repo's project settings, hooks or MCP servers (Claude:
+`--setting-sources user --strict-mcp-config`, no Bash/WebFetch/WebSearch; Codex: `workspace-write` sandbox with network
+off), so a hostile repo can't execute commands or reach other machines. Only `https://` repos are cloned. Result text
+and patches have terminal control characters stripped before they're stored or printed on the primary.
