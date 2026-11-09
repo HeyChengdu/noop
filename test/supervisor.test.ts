@@ -116,6 +116,17 @@ test("dated follow-ups are exempt; a delegated parent on a retired host is re-pi
   expect(sweepPlatform([young], [stuck]).map((v) => [v.id, v.cause])).toEqual([["T-4", "platform:os:macos"]]);
 });
 
+test("a task parked on a person's answer is not a stall, but one with no check still escalates", () => {
+  const human = task({ id: "T-1", created: new Date(NOW - 10 * H).toISOString(), wait_kind: "human",
+    waiting_on: "等待主人答复 D-0001", wait_check: "test -f decisions/closed/D-0001.md" });
+  expect(classify(human, ctx())).toBeNull();
+  const noCheck = task({ id: "T-2", created: new Date(NOW - 10 * H).toISOString(), wait_kind: "human",
+    waiting_on: "等待主人答复", wait_check: "" });
+  expect(classify(noCheck, ctx())!.action).toBe("escalate");
+  const onGone = task({ id: "T-3", wait_kind: "human", waiting_on: "等待主人答复", wait_check: "test -f x", claimed_by: "omarchy-jason" });
+  expect(classify(onGone, ctx())!.action).toBe("reroute"); // a retired host still wins: the check can no longer run
+});
+
 test("macOS host online + wait_check unrunnable on the primary: hand back to the Mac once, not a card", () => {
   const m = { id: "T-1", requires: "os:macos", created: new Date(NOW - 10 * H).toISOString(), waiting_on: "x", wait_check: "test -f /Users/j/done" };
   expect(classify(task(m), ctx())!.action).toBe("reroute");

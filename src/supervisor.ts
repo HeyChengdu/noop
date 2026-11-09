@@ -49,6 +49,8 @@ export function classify(t: Task, ctx: Ctx): Verdict | null {
     if (capable(rest).length) return v(`host:${gone}`, "reroute", [`绑定的主机 ${gone} 已停用`], rest.join(","));
     return v(`host:${gone}`, "escalate", [`绑定的主机 ${gone} 已停用，且没有其他在线主机满足 ${rest.join(",") || "要求"}`]);
   }
+  // waits on a person with a check that changes when they answer: the clock must not turn that into a card asking what to do
+  if (m.wait_kind === "human" && m.wait_check && t.folder === "waiting") return null;
   // 2. blocked on a card that is already closed → the answer never reached it
   if (t.folder === "blocked" && m.decision && ctx.decision(m.decision) === "closed") return v(`answered:${m.decision}`, "resume", [`${m.decision} 已回答但任务没有继续`]);
   if (t.folder === "blocked" && m.decision && ctx.decision(m.decision) === "open") return null; // the owner has the card
