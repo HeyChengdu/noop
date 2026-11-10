@@ -49,16 +49,16 @@ export function classify(t: Task, ctx: Ctx): Verdict | null {
     if (capable(rest).length) return v(`host:${gone}`, "reroute", [`绑定的主机 ${gone} 已停用`], rest.join(","));
     return v(`host:${gone}`, "escalate", [`绑定的主机 ${gone} 已停用，且没有其他在线主机满足 ${rest.join(",") || "要求"}`]);
   }
-  // waits on a person with a check that changes when they answer: the clock must not turn that into a card asking what to do
-  if (m.wait_kind === "human" && m.wait_check && t.folder === "waiting") return null;
   // 2. blocked on a card that is already closed → the answer never reached it
   if (t.folder === "blocked" && m.decision && ctx.decision(m.decision) === "closed") return v(`answered:${m.decision}`, "resume", [`${m.decision} 已回答但任务没有继续`]);
   if (t.folder === "blocked" && m.decision && ctx.decision(m.decision) === "open") return null; // the owner has the card
   const age = (ctx.now - startedAt(m)) / 3_600_000;
   const wakes = Number(m.wakes ?? 0);
   const reasons: string[] = [];
-  if (age >= ctx.maxAgeHours) reasons.push(`已等待 ${Math.floor(age)} 小时`);
-  if (wakes >= ctx.maxWakes) reasons.push(`唤醒 ${wakes} 次`);
+  // A person's answer is event-driven; exempt only clock/wake escalation, keeping host/check recovery below.
+  const humanWait = t.folder === "waiting" && m.wait_kind === "human" && !!m.wait_check;
+  if (!humanWait && age >= ctx.maxAgeHours) reasons.push(`已等待 ${Math.floor(age)} 小时`);
+  if (!humanWait && wakes >= ctx.maxWakes) reasons.push(`唤醒 ${wakes} 次`);
   if (checkUnrunnable(m.wait_check, ctx.primaryOs)) reasons.push("等待检查命令在主控机上无法运行，永远不会触发");
   // 3. waits on nothing: requeue once so the agent re-decides; the second time it is a card
   if (!m.waiting_on && !m.wait_check && t.folder === "waiting") {

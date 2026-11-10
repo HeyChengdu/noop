@@ -117,7 +117,7 @@ test("dated follow-ups are exempt; a delegated parent on a retired host is re-pi
 });
 
 test("a task parked on a person's answer is not a stall, but one with no check still escalates", () => {
-  const human = task({ id: "T-1", created: new Date(NOW - 10 * H).toISOString(), wait_kind: "human",
+  const human = task({ id: "T-1", created: new Date(NOW - 10 * H).toISOString(), wakes: "9", wait_kind: "human",
     waiting_on: "等待主人答复 D-0001", wait_check: "test -f decisions/closed/D-0001.md" });
   expect(classify(human, ctx())).toBeNull();
   const noCheck = task({ id: "T-2", created: new Date(NOW - 10 * H).toISOString(), wait_kind: "human",
@@ -125,6 +125,25 @@ test("a task parked on a person's answer is not a stall, but one with no check s
   expect(classify(noCheck, ctx())!.action).toBe("escalate");
   const onGone = task({ id: "T-3", wait_kind: "human", waiting_on: "等待主人答复", wait_check: "test -f x", claimed_by: "omarchy-jason" });
   expect(classify(onGone, ctx())!.action).toBe("reroute"); // a retired host still wins: the check can no longer run
+});
+
+test("human waits preserve recovery when their check cannot run on the primary", () => {
+  const human = task({ id: "T-1", requires: "os:macos", created: new Date(NOW - 10 * H).toISOString(),
+    wakes: "9", wait_kind: "human", waiting_on: "owner answer", wait_check: "test -f /Users/j/answer" });
+  const recovery = classify(human, ctx());
+  expect(recovery?.action).toBe("reroute");
+  expect(recovery?.cause).toBe("platform:os:macos");
+  expect(recovery?.reasons).toContain("等待检查命令在主控机上无法运行，永远不会触发");
+  expect(classify(human, ctx({ primaryOs: "macos" }))).toBeNull();
+  expect(classify(human, ctx({ online: [lin] }))?.action).toBe("escalate");
+  expect(classify(task({ ...human.meta, supervisor_requeued: "yes" }), ctx())?.action).toBe("escalate");
+  expect(classify(task({ ...human.meta, requires: "" }), ctx())?.action).toBe("escalate");
+});
+
+test("human waits still reroute when their pinned platform host goes offline", () => {
+  const human = task({ id: "T-1", requires: "os:macos,host:offline-mac", host: "offline-mac",
+    wait_kind: "human", waiting_on: "owner answer", wait_check: "test -f answer" });
+  expect(classify(human, ctx())?.action).toBe("reroute");
 });
 
 test("macOS host online + wait_check unrunnable on the primary: hand back to the Mac once, not a card", () => {
