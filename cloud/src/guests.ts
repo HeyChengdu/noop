@@ -11,6 +11,7 @@
 // Guest token:    GET /api/guest/next → {task|null} · POST /api/guest/result {id, ok, text, patch?} · PUT /api/guest/heartbeat
 
 import type { FilesSql } from "./files";
+import { L } from "./i18n";
 type SqlStorage = FilesSql;
 
 export const GUEST_TOKEN = /^g_[0-9a-f]{64}$/;
@@ -24,7 +25,7 @@ const hex = (b: ArrayBuffer | Uint8Array) => [...new Uint8Array(b)].map((x) => x
 export const sha256 = async (s: string) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
 const rand = (n: number) => hex(crypto.getRandomValues(new Uint8Array(n)));
 const json = (b: unknown, status = 200) => Response.json(b, { status });
-const clean = (s: unknown, n: number) => String(s ?? "").replace(/[\u0000-\u0008\u000b-\u001f]/g, "").slice(0, n);
+const clean = (s: unknown, n: number) => String(s ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "").slice(0, n);
 
 export type GuestWho = { guest: string };
 
@@ -55,7 +56,7 @@ export async function guestJoin(sql: SqlStorage, req: Request, notice: (t: strin
   if (!row || Number(row.expires) < Date.now()) return json({ error: "invalid code" }, 401);
   const id = `G-${rand(4)}`, token = `g_${rand(32)}`;
   sql.exec("INSERT INTO guests (id, label, token_hash, created, last_seen, revoked) VALUES (?, ?, ?, ?, ?, 0)", id, row.label, await sha256(token), Date.now(), Date.now());
-  notice(`访客机器 ${row.label}（${id}）已加入，只能领取派给它的任务。`);
+  notice(L(`Guest machine ${row.label} (${id}) joined. It can only take tasks assigned to it.`, `访客机器 ${row.label}（${id}）已加入，只能领取派给它的任务。`));
   return json({ id, token });
 }
 
@@ -78,7 +79,7 @@ export async function guestApi(sql: SqlStorage, req: Request, url: URL, who: Gue
     const id = String(b.id ?? "");
     const r = sql.exec("SELECT state FROM guest_tasks WHERE id = ? AND guest = ?", id, g).toArray()[0];
     if (!r || r.state !== "claimed") return json({ error: "not your task" }, 403);
-    const result = { ok: b.ok === true, text: clean(b.text, MAX_RESULT), ...(typeof b.patch === "string" ? { patch: b.patch.slice(0, MAX_RESULT) } : {}) };
+    const result = { ok: b.ok === true, text: clean(b.text, MAX_RESULT), ...(typeof b.patch === "string" ? { patch: clean(b.patch, MAX_RESULT) } : {}) };
     sql.exec("UPDATE guest_tasks SET state = 'done', result = ? WHERE id = ?", JSON.stringify(result), id);
     onResult(id, g);
     return json({ ok: true });
@@ -119,6 +120,7 @@ export async function guestsAdmin(sql: SqlStorage, req: Request, url: URL, who: 
     if (!g) return json({ error: "no such guest" }, 404);
     const id = String(task?.id ?? "");
     if (!/^T-[\w-]{1,40}$/.test(id)) return json({ error: "task id required" }, 400);
+    if (task?.repo && !/^https:\/\/[^\s]+$/.test(String(task.repo))) return json({ error: "repo must be an https:// URL" }, 400);
     const n = Number(sql.exec("SELECT COUNT(*) AS n FROM guest_tasks WHERE guest = ? AND state != 'done'", g.id).toArray()[0].n);
     if (n >= MAX_QUEUED) return json({ error: "queue full" }, 429);
     // only what the guest needs: the task text the primary wrote for it, never memory or the owner's profile

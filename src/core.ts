@@ -32,6 +32,10 @@ function merge(a: any, b: any): any {
   return out;
 }
 
+/** Owner-facing text in the fleet's language: `[owner] language = "en"` in config.toml gives English, otherwise Simplified Chinese. */
+export const isEnglish = (): boolean => /^en/i.test(String(loadConfig().owner?.language ?? ""));
+export const L = (en: string, zh: string): string => (isEnglish() ? en : zh);
+
 export function loadConfig(): Cfg {
   const read = (f: string) => (existsSync(P(f)) ? Bun.TOML.parse(readFileSync(P(f), "utf8")) : {});
   // noop.toml = machine-local bootstrap (Worker url + machine token), outside DATA because DATA itself comes from the Worker
@@ -260,7 +264,7 @@ export function updateState(): UpdateState | undefined {
   if ((u.state === "restarting" || u.state === "waiting") && Date.parse(u.ts) < STARTED) {
     const rev = runningRev().rev;
     if (rev && rev !== u.from) setUpdateState({ at: u.at, state: "done", detail: rev.slice(0, 7), from: u.from });
-    else setUpdateState({ at: u.at, state: "failed", detail: "重启后仍是旧代码", from: u.from });
+    else setUpdateState({ at: u.at, state: "failed", detail: L("Still on the old code after restart", "重启后仍是旧代码"), from: u.from });
     return updateState();
   }
   return u;
@@ -328,6 +332,7 @@ export function pickTask(cfg: Cfg, myLoad = 0, heavyOk = true): string | null {
 export const claim = (path: string, host: string) => locked(() => _claim(path, host));
 async function _claim(path: string, host: string): Promise<string | null> {
   if (!existsSync(path)) return null;
+  const raw = readFileSync(path);
   const { meta, body } = readDoc(path);
   const dest = P("tasks", "active", `${meta.id}.md`);
   writeDoc(dest, { ...meta, claimed_by: host, started: now(), host_caps: hostCaps(loadConfig()).join(",") }, body);
@@ -335,6 +340,8 @@ async function _claim(path: string, host: string): Promise<string | null> {
   if (await _commitPush(`[${host}] claim ${meta.id}: ${meta.title}`)) return dest;
   // undo only our claim (other pending local results stay queued); after a lost race the pull already applied the winner
   sync.revertLocal([relative(DATA, dest), relative(DATA, path)]);
+  // a task queued here and not pushed yet has no synced copy to revert to: put it back rather than delete it
+  if (!readdirSync(P("tasks")).some((d) => existsSync(P("tasks", d, `${meta.id}.md`)))) writeFileSync(path, raw);
   return null;
 }
 

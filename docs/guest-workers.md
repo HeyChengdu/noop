@@ -14,9 +14,20 @@ your Noop deployment.
 | GitHub / model credentials | the fleet's | none of ours; the machine's own model login |
 
 ## Set up
-1. On the primary (or any trusted machine): `noop guest invite "shared-win-1"` prints a one-time join command valid
-   for 10 minutes.
-2. On the shared machine, in the account that will run it: `noop guest join <url> <code>`, then `noop guest run`.
+1. On the primary (or any trusted machine): `noop guest invite "shared-win-1"` prints a one-time join code valid for
+   10 minutes, as install lines for Windows and macOS/Linux.
+2. On the shared machine, in the account that will run it, paste the line for its OS. It installs bun and Noop and
+   joins as the guest, with no owner login and no machine key:
+   - Windows (PowerShell): `$env:NOOP_GUEST = "<url> <code>"; irm https://huacnlee.github.io/noop/install.ps1 | iex`
+   - macOS / Linux: `curl -fsSL https://huacnlee.github.io/noop/install.sh | bash -s -- --guest <url> <code>`
+   - Noop already installed: `noop guest join <url> <code>`
+
+   The install lines also start the guest as a per-account background service (systemd user unit, launchd agent, or
+   a hidden process from the account's Run key on Windows; no admin rights). `noop guest install` / `uninstall` add or
+   remove it by hand, and `noop guest run` runs it in the foreground instead. Install and log in to `claude` (or
+   `codex`) in that account first: the guest runs tasks with the machine's own login.
+3. An idle guest asks for work every 5 minutes (`GUEST_IDLE_MS`), so an assigned task can wait up to that long to
+   start. A revoked guest stops for good instead of retrying.
    The token lives in `NOOP_GUEST_HOME` (default `~/.noop-guest`). Each person/OS account on a shared machine uses its
    own home, so their guests never see each other's tasks or tokens.
 
@@ -32,3 +43,9 @@ your Noop deployment.
 Results are capped at 256 KB, tasks at 32 KB, 20 queued tasks per guest; a claimed task with no result returns to the
 queue after 6 hours. Anyone with access to the guest's home folder can act as that guest, which only lets them take
 the tasks assigned to it and send back results that are reviewed anyway.
+
+## Safety on the guest machine
+The cloned repository is untrusted. The agent runs without the repo's project settings, hooks or MCP servers (Claude:
+`--setting-sources user --strict-mcp-config`, no Bash/WebFetch/WebSearch; Codex: `workspace-write` sandbox with network
+off), so a hostile repo can't execute commands or reach other machines. Only `https://` repos are cloned. Result text
+and patches have terminal control characters stripped before they're stored or printed on the primary.
